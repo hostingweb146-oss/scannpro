@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Mart POS & Barcode Scanner</title>
+
+  <!-- Google Fonts: Kantumruy Pro & Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- HTML5 QR Code Scanner -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- html2canvas for Receipt Image Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            neon: {
+              cyan: '#06b6d4',
+              emerald: '#10b981',
+              amber: '#f59e0b',
+              rose: '#f43f5e'
+            },
+            darkBg: '#090d16',
+            surface: '#131c2e',
+            surfaceCard: '#1a243b',
+            surfaceBorder: 'rgba(255, 255, 255, 0.08)',
+          },
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'Kantumruy Pro', 'sans-serif'],
+            mono: ['Space Mono', 'Courier New', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.35); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.6); }
+
+    /* Neon Glows */
+    .glow-cyan {
+      box-shadow: 0 0 25px -5px rgba(6, 182, 212, 0.35);
+    }
+    .glow-brand {
+      box-shadow: 0 0 30px -5px rgba(99, 102, 241, 0.4);
+    }
+    .glow-emerald {
+      box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.4);
+    }
+
+    /* Laser Reticle Animation */
+    @keyframes laserSweep {
+      0% { top: 10%; opacity: 0.8; }
+      50% { top: 90%; opacity: 1; }
+      100% { top: 10%; opacity: 0.8; }
+    }
+    .laser-line {
+      animation: laserSweep 2s ease-in-out infinite;
+      box-shadow: 0 0 14px 3px #10b981;
+    }
+    .scanner-card {
+      background: linear-gradient(145deg, rgba(19, 28, 46, 0.98), rgba(9, 13, 22, 0.98));
+    }
+    .scanner-viewport {
+      min-height: 260px;
+      aspect-ratio: 16 / 9;
+      background:
+        linear-gradient(rgba(6, 182, 212, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(6, 182, 212, 0.06) 1px, transparent 1px),
+        #050a12;
+      background-size: 32px 32px;
+      box-shadow: inset 0 0 50px rgba(0, 0, 0, 0.65);
+    }
+    .scanner-viewport::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at center, transparent 35%, rgba(0, 0, 0, 0.5) 100%);
+    }
+    .scanner-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 999px;
+      color: #6ee7b7;
+      background: rgba(16, 185, 129, 0.08);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+    .scanner-status::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 10px #10b981;
+    }
+    .scan-frame {
+      width: min(78%, 360px) !important;
+      height: auto !important;
+      aspect-ratio: 16 / 7;
+      border-color: rgba(34, 211, 238, 0.65) !important;
+      box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.16), 0 0 30px rgba(6, 182, 212, 0.1);
+    }
+    .scan-frame span {
+      border-color: #67e8f9 !important;
+    }
+
+    /* Serrated Receipt Jagged Edge */
+    .receipt-paper {
+      position: relative;
+      background: #fafaf9;
+      color: #1c1917;
+      font-family: 'Kantumruy Pro', 'Noto Sans Khmer', sans-serif !important;
+      line-height: 1.5;
+      box-shadow: 0 20px 35px -10px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.05);
+    }
+    .receipt-paper .font-sans,
+    .receipt-paper .font-mono {
+      font-family: 'Kantumruy Pro', 'Noto Sans Khmer', sans-serif !important;
+    }
+    .khmer-label {
+      font-family: 'Kantumruy Pro', 'Noto Sans Khmer', sans-serif !important;
+    }
+    .site-logo {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 12px;
+      background: #ffffff;
+    }
+    .receipt-logo {
+      display: block;
+      width: 76px;
+      height: 76px;
+      object-fit: contain;
+      margin: 0 auto 8px;
+    }
+    .receipt-qr {
+      display: block;
+      width: 128px;
+      height: 128px;
+      object-fit: contain;
+    }
+    .receipt-paper::after {
+      content: "";
+      position: absolute;
+      bottom: -10px;
+      left: 0;
+      right: 0;
+      height: 10px;
+      background: radial-gradient(circle, transparent, transparent 50%, #fafaf9 50%, #fafaf9 100%);
+      background-size: 14px 14px;
+      background-position: -7px bottom;
+    }
+
+    /* Html5Qrcode Overrides for Cleaner Dark Glass Interface */
+    #reader {
+      border: none !important;
+      width: 100% !important;
+    }
+    #reader video {
+      border-radius: 14px !important;
+      object-fit: cover !important;
+    }
+    #reader__scan_region {
+      background: transparent !important;
+    }
+    #reader__dashboard_section_csr button {
+      background: #4f46e5;
+      color: white;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      margin: 4px;
+      cursor: pointer;
+    }
+
+    /* Thermal Printer Paper @media print */
+    @media print {
+      body * { visibility: hidden; }
+      #printable-receipt, #printable-receipt * { visibility: visible; }
+      #printable-receipt {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 78mm;
+        margin: 0;
+        padding: 6mm 4mm;
+        box-shadow: none !important;
+        border: none !important;
+        background: #ffffff !important;
+        color: #000000 !important;
+      }
+      .no-print { display: none !important; }
+      .receipt-paper::after { display: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-darkBg text-slate-100 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+  <header class="sticky top-0 z-40 bg-surface/90 backdrop-blur-md border-b border-surfaceBorder px-4 py-3 sm:px-6">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
+      <!-- Logo Branding -->
+      <div class="flex items-center gap-3">
+        <div class="relative flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-tr from-brand-600 via-neon-cyan to-neon-emerald p-[2px] glow-brand shadow-lg">
+          <div class="w-full h-full bg-darkBg/90 rounded-[14px] flex items-center justify-center backdrop-blur-sm">
+            <img src="logo4.jpg" alt="Yongbin logo" class="site-logo">
+          </div>
+        
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-extrabold text-lg sm:text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-400">
+              SMART MART <span class="text-neon-cyan font-mono text-sm px-1.5 py-0.5 rounded bg-neon-cyan/10 border border-neon-cyan/20">POS</span>
+            </h1>
+          </div>
+          <p class="text-xs text-slate-400 font-medium">ស្មាតម៉ាត • គិតប្រាក់រហ័ស & ស្កេនបាកូដ</p>
+        </div>
+      </div>
+
+      <!-- Live Rate & Sheet Connection Status -->
+      <div class="flex items-center gap-2 sm:gap-4">
+        <div class="hidden sm:flex flex-col text-right">
+          <div class="text-[11px] text-slate-400 font-medium flex items-center gap-1 justify-end">
+            <span>អត្រាប្តូរប្រាក់ (Rate):</span>
+            <span class="text-amber-400 font-mono font-bold">$1 = 4,100៛</span>
+          </div>
+          <div class="text-[10px] text-slate-500" id="live-time">ភ្នំពេញ ម៉ោង ...</div>
+        </div>
+
+        <button onclick="syncDataSheet()" id="btn-sync" title="Sync with Google Sheets" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-surfaceCard hover:bg-slate-800 border border-surfaceBorder text-slate-300 transition-all active:scale-95">
+          <span id="sync-dot" class="w-2 h-2 rounded-full bg-neon-emerald animate-pulse"></span>
+          <span id="sync-label" class="hidden xs:inline">Sheets Sync</span>
+          <svg id="sync-icon" class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+        <button onclick="toggleScanPanel()" id="scan-panel-toggle" title="បិទផ្ទាំងស្កេន" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-surfaceCard hover:bg-slate-800 border border-surfaceBorder text-slate-300 transition-all active:scale-95">
+          <span id="scan-panel-icon">▣</span>
+          <span id="scan-panel-label" class="hidden sm:inline">បិទផ្ទាំងស្កេន</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Switch View Tabs -->
+    <div class="lg:hidden grid grid-cols-2 gap-2 mt-3 pt-2 border-t border-surfaceBorder/60">
+      <button onclick="switchMobileTab('pos')" id="tab-btn-pos" class="flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all bg-brand-600 text-white shadow-md">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+        </svg>
+        ស្កេន & ទំនិញ (Shelf)
+      </button>
+      <button onclick="switchMobileTab('cart')" id="tab-btn-cart" class="flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all bg-surfaceCard text-slate-300 border border-surfaceBorder">
+        <div class="relative">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+          </svg>
+          <span id="tab-cart-badge" class="absolute -top-1 -right-2 bg-neon-rose text-white text-[9px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold">0</span>
+        </div>
+        កន្ត្រក (<span id="tab-cart-total">$0.00</span>)
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-5 mb-24 lg:mb-6">
+
+    <!-- Left Column: Camera Scanner + Manual Input + Quick Shelf -->
+    <section id="pane-scanner" class="lg:col-span-7 flex flex-col gap-4">
+      
+      <!-- Scanner Card -->
+      <div id="scanner-panel-card" class="scanner-card bg-surface rounded-2xl border border-surfaceBorder p-4 shadow-xl overflow-hidden relative">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-neon-cyan"></span>
+            <div>
+              <h2 class="text-sm font-bold text-slate-200 tracking-wide uppercase flex items-center gap-1.5">
+                <span>ម៉ាស៊ីនស្កេនបាកូដ</span>
+                <span class="text-slate-400 font-normal lowercase">(Camera Scanner)</span>
+              </h2>
+              <span class="scanner-status mt-1">READY TO SCAN</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="toggleSoundFx()" id="sound-btn" class="p-1.5 rounded-lg bg-surfaceCard hover:bg-slate-800 border border-surfaceBorder text-slate-300 text-xs flex items-center gap-1">
+              <span id="sound-icon">🔊</span> សំឡេង
+            </button>
+            <button onclick="toggleCameraStream()" id="cam-toggle-btn" class="p-1.5 rounded-lg bg-surfaceCard hover:bg-slate-800 border border-surfaceBorder text-slate-300 text-xs flex items-center gap-1">
+              <span id="cam-icon">📷</span> <span id="cam-label">បិទកាមេរ៉ា</span>
+            </button>
+            <button type="button" onclick="switchCameraFacing()" id="btn-switch-cam" class="p-1.5 rounded-lg bg-surfaceCard hover:bg-slate-800 border border-surfaceBorder text-slate-300 text-xs flex items-center gap-1" title="ប្តូរកាមេរ៉ាមុខ/ក្រោយ">
+              <span id="switch-cam-icon">🔄</span>
+              <span id="switch-cam-label">កាមេរ៉ាក្រោយ</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Scanner Viewport Frame -->
+        <div class="scanner-viewport relative w-full rounded-xl overflow-hidden border border-surfaceBorder flex items-center justify-center group">
+          <div id="reader" class="w-full"></div>
+          <!-- Futuristic Overlay HUD -->
+          <div id="scanner-hud" class="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div class="scan-frame relative border rounded-2xl flex items-center justify-center">
+              <!-- Corner Crosshairs -->
+              <span class="absolute -top-1 -left-1 w-5 h-5 border-t-2 border-l-2 border-neon-cyan rounded-tl-lg"></span>
+              <span class="absolute -top-1 -right-1 w-5 h-5 border-t-2 border-r-2 border-neon-cyan rounded-tr-lg"></span>
+              <span class="absolute -bottom-1 -left-1 w-5 h-5 border-b-2 border-l-2 border-neon-cyan rounded-bl-lg"></span>
+              <span class="absolute -bottom-1 -right-1 w-5 h-5 border-b-2 border-r-2 border-neon-cyan rounded-br-lg"></span>
+              <!-- Animated Laser Line -->
+              <div class="laser-line absolute left-2 right-2 h-[2px] bg-neon-emerald/90 rounded-full"></div>
+              <span class="absolute -bottom-9 whitespace-nowrap text-[10px] text-emerald-300 font-mono tracking-wider bg-black/70 px-2.5 py-1 rounded-md backdrop-blur-sm border border-emerald-500/20">
+                តម្រង់បាកូដនៅក្នុងប្រអប់
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Manual Input / Barcode Gun Trigger -->
+        <div class="mt-4 flex flex-col sm:flex-row gap-2">
+          <div class="relative flex-1">
+            <input type="text" id="manual-barcode" placeholder="វាយលេខកូដបាកូដ ឬឈ្មោះទំនិញ... (Press Enter)"
+                   class="w-full bg-darkBg/90 border border-surfaceBorder rounded-xl px-4 py-3 pl-10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all"
+                   onkeypress="if(event.key === 'Enter') handleManualSearch()">
+            <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          <button onclick="handleManualSearch()" class="px-5 py-3 bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md shadow-brand-600/20">
+            <span>បញ្ចូល</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-surface rounded-2xl border border-surfaceBorder p-4 shadow-xl flex flex-col">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div>
+            <h3 class="text-sm font-bold text-slate-200">ទំនិញលក់ដាច់រហ័ស (Quick Shelf)</h3>
+            <p class="text-[11px] text-slate-400">ចុចលើរូបដើម្បីបញ្ចូលក្នុងកន្ត្រកភ្លាមៗ ដោយមិនបាច់ស្កេន</p>
+          </div>
+          <div class="flex items-center gap-2 overflow-x-auto py-2">
+  <button onclick="filterCatalog('all')" class="cat-pill active px-3 py-1 text-xs rounded-lg font-medium bg-indigo-600 text-white">ទាំងអស់</button>
+  <button onclick="filterCatalog('Drink')" class="cat-pill px-3 py-1 text-xs rounded-lg font-medium bg-slate-800 text-slate-300">ភេសជ្ជៈ (Drink)</button>
+  <button onclick="filterCatalog('Snack')" class="cat-pill px-3 py-1 text-xs rounded-lg font-medium bg-slate-800 text-slate-300">អាហារសម្រន់ (Snack)</button>
+  <button onclick="filterCatalog('Grocery')" class="cat-pill px-3 py-1 text-xs rounded-lg font-medium bg-slate-800 text-slate-300">គ្រឿងទេស (Grocery)</button>
+ <button onclick="filterCatalog('Skin Care')" class="cat-pill px-3 py-1 text-xs rounded-lg font-medium bg-slate-800 text-slate-300">ថែរក្សាស្បែក (Skin Care)</button>
+  <button onclick="filterCatalog('Dairy')" class="cat-pill px-3 py-1 text-xs rounded-lg font-medium bg-slate-800 text-slate-300">ទឹកដោះគោ (Dairy)</button>
+  <button onclick="filterCatalog('Personal Care')" class="cat-pill px-3 py-1 text-xs rounded-lg font-medium bg-slate-800 text-slate-300">សម្ភារៈបន្ទប់ទឹក</button>
+</div>
+        </div>
+
+        <!-- Shelf Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-[380px] overflow-y-auto pr-1" id="shelf-grid">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+    </section>
+
+    <section id="pane-cart" class="lg:col-span-5 flex flex-col gap-4">
+      
+      <!-- Cart Card -->
+      <div class="bg-surface rounded-2xl border border-surfaceBorder p-4 sm:p-5 shadow-xl flex flex-col h-full">
+        <div class="flex items-center justify-between pb-3 border-b border-surfaceBorder">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 font-bold">
+              🛒
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-white">កន្ត្រកទំនិញ (Current Order)</h2>
+              <p class="text-xs text-slate-400" id="cart-item-count">0 មុខទំនិញ (Items)</p>
+            </div>
+          </div>
+          <button onclick="clearCart()" class="text-xs text-rose-400 hover:text-rose-300 font-medium px-2.5 py-1 rounded-lg hover:bg-rose-500/10 transition-colors">
+            សម្អាត (Clear)
+          </button>
+        </div>
+
+        <!-- Cart Items Scrollable List -->
+        <div class="flex-1 min-h-[220px] max-h-[360px] overflow-y-auto py-3 space-y-2.5" id="cart-items-container">
+          <!-- Empty State -->
+          <div class="h-44 flex flex-col items-center justify-center text-slate-500 text-center p-4">
+            <svg class="w-12 h-12 text-slate-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+            </svg>
+            <p class="text-sm font-medium text-slate-400">មិនទាន់មានទំនិញក្នុងកន្ត្រកទេ</p>
+            <p class="text-xs text-slate-500 mt-0.5">ស្កេនបាកូដ ឬចុចលើទំនិញដើម្បីបញ្ចូល</p>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-surfaceBorder space-y-3">
+          
+          <!-- Discount & Payment Method Toggle -->
+          <div class="flex items-center justify-between gap-2 text-xs">
+            <div class="flex items-center gap-1.5 bg-darkBg/60 p-1 rounded-xl border border-surfaceBorder">
+              <button onclick="setDiscount(0)" id="disc-0" class="px-2.5 py-1 rounded-lg font-bold bg-brand-600 text-white">0%</button>
+              <button onclick="setDiscount(5)" id="disc-5" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white">5%</button>
+              <button onclick="setDiscount(10)" id="disc-10" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white">10%</button>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <label class="text-slate-400">ទូទាត់:</label>
+              <select id="payment-type" class="bg-darkBg border border-surfaceBorder rounded-lg px-2.5 py-1 text-slate-200 text-xs outline-none focus:border-brand-500">
+                <option value="Cash">សាច់ប្រាក់ (Cash)</option>
+                <option value="Bakong KHQR">បាគង KHQR</option>
+                <option value="Card">កាតធនាគារ (Card)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Cash Tender Received Calculator (For Change computation) -->
+          <div class="bg-darkBg/60 rounded-xl p-2.5 border border-surfaceBorder/80 flex flex-col gap-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-400">ប្រាក់ទទួលពីអតិថិជន (Cash Received):</span>
+              <div class="flex items-center gap-1">
+                <span class="text-slate-500 text-xs">$</span>
+                <input type="number" id="cash-received" placeholder="0.00" step="any" min="0" 
+                       class="w-24 bg-surfaceCard text-right font-mono font-bold text-white px-2 py-0.5 rounded border border-surfaceBorder focus:outline-none focus:border-neon-cyan"
+                       oninput="calculateChange()">
+              </div>
+            </div>
+            <!-- Auto Change Preview -->
+            <div class="flex items-center justify-between text-xs pt-1 border-t border-surfaceBorder/50 font-mono">
+              <span class="khmer-label text-slate-400">ប្រាក់អាប់ជូន (Change Due):</span>
+              <div class="text-right">
+                <span id="change-usd" class="font-bold text-neon-emerald">$0.00</span>
+                <span class="text-slate-500 text-[11px] mx-1">/</span>
+                <span id="change-khr" class="text-amber-400 text-[11px]">0 ៛</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bill Grand Total Display -->
+          <div class="bg-gradient-to-br from-surfaceCard to-darkBg rounded-xl p-3 border border-surfaceBorder flex items-center justify-between">
+            <div>
+              <div class="text-xs text-slate-400">ទឹកប្រាក់សរុប (Grand Total)</div>
+              <div class="text-base font-bold text-amber-400 font-mono mt-0.5" id="cart-total-riel">0 ៛</div>
+            </div>
+            <div class="text-right">
+              <div class="text-2xl sm:text-3xl font-extrabold text-neon-emerald font-mono tracking-tight" id="cart-total-usd">$0.00</div>
+              <div class="text-[11px] text-slate-400" id="cart-discount-label">បញ្ចុះតម្លៃ 0%</div>
+            </div>
+          </div>
+
+          <!-- Pay & Print Button -->
+          <button id="btn-checkout" onclick="handleCheckout()" 
+                  class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-neon-emerald to-emerald-600 hover:from-emerald-500 hover:to-emerald-600 text-slate-950 font-extrabold text-base tracking-wide flex items-center justify-center gap-2 glow-emerald transition-all active:scale-[0.98] shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+            <span>គិតលុយ & បោះពុម្ពវិក្កយបត្រ (Pay & Print)</span>
+          </button>
+
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <div class="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-surface/95 backdrop-blur-lg border-t border-surfaceBorder p-3 flex items-center justify-between gap-3 shadow-2xl">
+    <div>
+      <div class="text-[11px] text-slate-400">សរុប (Total)</div>
+      <div class="text-lg font-black text-neon-emerald font-mono" id="mobile-bar-total">$0.00</div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="switchMobileTab('cart')" class="px-4 py-2.5 rounded-xl bg-surfaceCard border border-surfaceBorder text-slate-200 text-xs font-bold flex items-center gap-1.5">
+        <span>កន្ត្រក</span>
+        <span id="mobile-bar-count" class="bg-brand-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">0</span>
+      </button>
+      <button onclick="handleCheckout()" class="px-5 py-2.5 rounded-xl bg-neon-emerald text-slate-950 text-xs font-extrabold flex items-center gap-1 glow-emerald">
+        <span>គិតលុយ</span>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="receipt-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden transition-opacity">
+    <div class="w-full max-w-sm flex flex-col max-h-[92vh]">
+      
+      <!-- Receipt Container for Print & Screenshot -->
+      <div class="overflow-y-auto flex-1 rounded-t-2xl p-1 bg-transparent">
+        <div id="printable-receipt" class="receipt-paper p-5 rounded-t-xl font-mono text-[12px] leading-relaxed select-text">
+          
+          <!-- Receipt Header -->
+          <div class="text-center pb-3 border-b border-dashed border-stone-800">
+            <img src="logo4.jpg" alt="Yongbin logo" class="receipt-logo">
+            <div class="flex items-center justify-center gap-1.5 font-sans font-black text-lg text-stone-900 tracking-wider">
+              <span>SMART MART POS</span>
+            </div>
+            <p class="text-[11px] text-stone-600 font-sans">សាខា ផ្សារទំនើប ភ្នំពេញ (Phnom Penh Mart)</p>
+            <p class="text-[10px] text-stone-500 font-sans">ទូរស័ព្ទ: 012 345 678 / 098 765 432</p>
+            
+            <div class="mt-2.5 pt-2 border-t border-dotted border-stone-400 flex justify-between text-[11px]">
+              <span id="receipt-inv-no">INV-2026-0001</span>
+              <span id="receipt-date">2026-09-20 12:00</span>
+            </div>
+            <div class="flex justify-between text-[11px] text-stone-600">
+              <span>បេឡាករ (Cashier): POS-01</span>
+              <span id="receipt-pay-method">Cash</span>
+            </div>
+          </div>
+
+          <!-- Items Table -->
+          <div class="py-2.5 border-b border-dashed border-stone-800">
+            <table class="w-full text-left">
+              <thead>
+                <tr class="text-[10px] text-stone-500 border-b border-stone-300 uppercase">
+                  <th class="py-1">ទំនិញ (Item)</th>
+                  <th class="py-1 text-center">ចំនួន</th>
+                  <th class="py-1 text-right">តម្លៃ</th>
+                  <th class="py-1 text-right">សរុប</th>
+                </tr>
+              </thead>
+              <tbody id="receipt-table-body" class="divide-y divide-stone-200">
+                <!-- Dynamically injected -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Financial Calculation -->
+          <div class="py-2.5 space-y-1 text-[11px] border-b border-dashed border-stone-800">
+            <div class="flex justify-between text-stone-600">
+              <span>សរុបដើម (Subtotal):</span>
+              <span id="receipt-subtotal">$0.00</span>
+            </div>
+            <div class="flex justify-between text-stone-600" id="receipt-disc-row">
+              <span>បញ្ចុះតម្លៃ (Discount):</span>
+              <span id="receipt-discount">-$0.00</span>
+            </div>
+            <div class="flex justify-between text-stone-900 font-bold text-sm pt-1 border-t border-stone-300">
+              <span>ទឹកប្រាក់សរុប (USD):</span>
+              <span id="receipt-total-usd" class="font-extrabold">$0.00</span>
+            </div>
+            <div class="flex justify-between text-stone-800 font-bold text-xs">
+              <span>ទឹកប្រាក់សរុប (KHR):</span>
+              <span id="receipt-total-khr">0 ៛</span>
+            </div>
+            
+            <!-- Cash & Change Breakdown -->
+            <div class="pt-1.5 mt-1 border-t border-dotted border-stone-400 space-y-0.5 text-stone-600">
+              <div class="flex justify-between text-[10px]">
+                <span>ប្រាក់ទទួល (Paid):</span>
+                <span id="receipt-paid">$0.00</span>
+              </div>
+              <div class="flex justify-between text-[10px] font-bold text-stone-900">
+                <span class="khmer-label">ប្រាក់អាប់ជូន (Change Due):</span>
+                <span id="receipt-change">$0.00 (0 ៛)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer QR & Gratitude -->
+          <div class="pt-3 text-center space-y-2">
+            <!-- Payment QR code -->
+            <div class="flex justify-center">
+              <div class="p-1.5 bg-white border border-stone-300 rounded inline-block shadow-sm">
+                <img src="qr.jpg" alt="Payment QR code" class="receipt-qr">
+              </div>
+            </div>
+            <p class="font-sans text-[11px] font-semibold text-stone-800">សូមអរគុណ! សូមអញ្ជើញមកម្តងទៀត!</p>
+            <p class="text-[9px] text-stone-500">វិក្កយបត្រអេឡិចត្រូនិច • Powered by Smart Mart Cloud</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Action Buttons Modal Controls (hidden on physical print) -->
+      <div class="bg-surface p-3 rounded-b-2xl border-t border-surfaceBorder flex gap-2 no-print">
+        <button onclick="window.print()" class="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-white text-slate-900 font-bold text-xs flex items-center justify-center gap-1.5 shadow transition-all active:scale-95">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+          </svg>
+          ព្រីន (Print)
+        </button>
+
+        <button onclick="downloadReceiptImage()" id="btn-save-img" class="flex-1 py-2.5 rounded-xl bg-neon-cyan hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow transition-all active:scale-95">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span id="save-img-label">ទាញយករូប (PNG)</span>
+        </button>
+
+        <button onclick="closeReceiptModal()" class="px-4 py-2.5 rounded-xl bg-surfaceCard hover:bg-slate-800 border border-surfaceBorder text-slate-300 font-semibold text-xs transition-all">
+          បិទ
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-3 px-4 py-3 rounded-xl bg-surface/95 border border-brand-500/40 text-white shadow-2xl backdrop-blur-md">
+    <div id="toast-icon" class="w-7 h-7 rounded-lg bg-neon-emerald/20 text-neon-emerald flex items-center justify-center font-bold">✓</div>
+    <div>
+      <div id="toast-title" class="text-xs font-bold">បានជោគជ័យ</div>
+      <div id="toast-msg" class="text-[11px] text-slate-300">ប្រតិបត្តិការជោគជ័យ</div>
+    </div>
+  </div>
+
+  <script>
+    // Configuration & Endpoints
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzb7ujbt01npg7tMH9iGpRCoroqRhJz3ttRDaJ4cXExUBddR9m89MCqhtiFAv45u-JAQg/exec";
+    const KHR_RATE = 4100; // អត្រាប្តូរប្រាក់ USD -> KHR
+
+    // Application State
+    let inventory = [];
+    let cart = [];
+    let discountPercent = 0;
+    let isSoundEnabled = true;
+    let html5QrCode = null;
+    let isCameraRunning = false;
+    let scanCooldown = false;
+    let nativeDetector = null;
+    let nativeScanLoopId = null;
+    let currentFacingMode = "environment";
+
+    // Web Audio Synthesizer (Modern clean sound feedback)
+    const AudioEngine = {
+      ctx: null,
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+      },
+      beep() {
+        if (!isSoundEnabled) return;
+        try {
+          this.init();
+          if (this.ctx.state === 'suspended') this.ctx.resume();
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(1850, this.ctx.currentTime);
+          gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.1);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.1);
+        } catch(e) {}
+      },
+      cashChime() {
+        if (!isSoundEnabled) return;
+        try {
+          this.init();
+          if (this.ctx.state === 'suspended') this.ctx.resume();
+          const notes = [523.25, 659.25, 783.99, 1046.50];
+          notes.forEach((freq, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime + idx * 0.07);
+            gain.gain.setValueAtTime(0.18, this.ctx.currentTime + idx * 0.07);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + idx * 0.07 + 0.3);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(this.ctx.currentTime + idx * 0.07);
+            osc.stop(this.ctx.currentTime + idx * 0.07 + 0.35);
+          });
+        } catch(e) {}
+      }
+    };
+
+    // Fallback Offline Catalog
+    const DEFAULT_CATALOG = [
+      { Barcode: "8841234001", "Product Name": "Vital Premium Water 500ml", "Sale Price ($)": 0.35, Category: "beverage", Image: "https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=150" },
+      { Barcode: "8841234002", "Product Name": "Carabao Energy Drink Can", "Sale Price ($)": 0.65, Category: "beverage", Image: "https://images.unsplash.com/photo-1622543925917-763c34d1a86e?w=150" },
+      { Barcode: "8841234003", "Product Name": "Coca-Cola Original 330ml", "Sale Price ($)": 0.60, Category: "beverage", Image: "https://images.unsplash.com/photo-1554866585-cd94860890b7?w=150" },
+      { Barcode: "8846015180038", "Product Name": "ទឹកបរិសុទ្ធ (Pure Drinking Water)", "Sale Price ($)": 0.25, Category: "beverage", Image: "https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=150" }
+    ];
+
+    // Toast Messenger
+    function showToast(title, msg, type = 'success') {
+      const toast = document.getElementById("toast");
+      const icon = document.getElementById("toast-icon");
+      if (!toast) return;
+
+      document.getElementById("toast-title").innerText = title;
+      document.getElementById("toast-msg").innerText = msg;
+
+      if (type === 'success') {
+        icon.className = "w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold";
+        icon.innerText = "✓";
+      } else if (type === 'warn') {
+        icon.className = "w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold";
+        icon.innerText = "!";
+      } else {
+        icon.className = "w-7 h-7 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold";
+        icon.innerText = "✕";
+      }
+
+      toast.style.transform = "translateY(0)";
+      toast.style.opacity = "1";
+      setTimeout(() => {
+        toast.style.transform = "translateY(-100px)";
+        toast.style.opacity = "0";
+      }, 2400);
+    }
+
+    function toggleSoundFx() {
+      isSoundEnabled = !isSoundEnabled;
+      document.getElementById("sound-icon").innerText = isSoundEnabled ? "🔊" : "🔇";
+      showToast("សំឡេង (Sound)", isSoundEnabled ? "បើកសំឡេងរួចរាល់" : "បានបិទសំឡេង", "warn");
+    }
+
+    async function syncDataSheet() {
+      const dot = document.getElementById("sync-dot");
+      const icon = document.getElementById("sync-icon");
+      if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-400 animate-ping";
+      if (icon) icon.classList.add("animate-spin");
+
+      try {
+        const response = await fetch(SCRIPT_URL, { cache: "no-store" });
+        if (!response.ok) throw new Error("HTTP error " + response.status);
+        const data = await response.json();
+        
+        if (Array.isArray(data) && data.length > 0) {
+          inventory = data.map(item => ({
+            Barcode: String(item.Barcode || "").trim(),
+            "Product Name": item["Product Name"] || "ទំនិញគ្មានឈ្មោះ",
+            "Sale Price ($)": parseFloat(item["Sale Price ($)"] || 0),
+            Category: item.Category || "grocery",
+            Image: item.Image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=120"
+          }));
+          if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+          showToast("ធ្វើសមកាលកម្មរួចរាល់", `បានទាញយកទំនិញ ${inventory.length} មុខពី Sheets`);
+        } else {
+          throw new Error("Empty sheets data");
+        }
+      } catch (err) {
+        console.warn("Using offline catalog:", err);
+        inventory = [...DEFAULT_CATALOG];
+        if (dot) dot.className = "w-2 h-2 rounded-full bg-cyan-400";
+        showToast("ម៉ូដក្រៅបណ្តាញ (Offline Mode)", "កំពុងប្រើបញ្ជីទំនិញស្តង់ដារ", "warn");
+      } finally {
+        if (icon) icon.classList.remove("animate-spin");
+        renderShelf();
+      }
+    }
+
+function renderShelf(category = 'all') {
+      const shelf = document.getElementById("shelf-grid");
+      if (!shelf) return;
+
+      const filtered = category === 'all' 
+        ? inventory 
+        : inventory.filter(p => {
+            const itemCat = String(p.Category || '').trim().toLowerCase();
+            const targetCat = String(category).trim().toLowerCase();
+            
+            // គាំទ្រទាំងពាក្យ Drink និង Beverage ក្នុងពេលតែមួយ
+            if (targetCat === 'drink' || targetCat === 'beverage') {
+              return itemCat === 'drink' || itemCat === 'beverage';
+            }
+            return itemCat === targetCat;
+          });
+
+      if (filtered.length === 0) {
+        shelf.innerHTML = `<div class="col-span-full py-8 text-center text-slate-500 text-xs">រកមិនឃើញទំនិញក្នុងក្រុមនេះទេ</div>`;
+        return;
+      }
+
+      shelf.innerHTML = filtered.map(item => `
+        <div onclick="addByItemObj('${item.Barcode}')" 
+             class="group bg-slate-900/80 hover:bg-slate-800 border border-slate-700/60 hover:border-indigo-500 rounded-xl p-2.5 flex flex-col justify-between transition-all cursor-pointer active:scale-95 shadow">
+          <div class="relative w-full aspect-square rounded-lg overflow-hidden bg-slate-950 mb-2">
+            <img src="${item.Image}" alt="${item["Product Name"]}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=150'">
+            <div class="absolute bottom-1 right-1 bg-black/75 backdrop-blur-sm text-[10px] text-amber-400 font-mono font-bold px-1.5 py-0.5 rounded">
+              $${Number(item["Sale Price ($)"]).toFixed(2)}
+            </div>
+          </div>
+          <div>
+            <h4 class="text-xs font-semibold text-slate-200 line-clamp-1 group-hover:text-cyan-300 transition-colors">${item["Product Name"]}</h4>
+            <p class="text-[10px] text-slate-500 font-mono mt-0.5">${item.Barcode}</p>
+          </div>
+          <div class="mt-2 flex items-center justify-between text-[11px]">
+            <span class="text-emerald-400 font-semibold font-mono">~ ${(Number(item["Sale Price ($)"]) * KHR_RATE).toLocaleString()} ៛</span>
+            <span class="w-5 h-5 rounded-md bg-indigo-600/30 text-indigo-400 flex items-center justify-center font-bold text-xs group-hover:bg-indigo-600 group-hover:text-white transition-colors">+</span>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function filterCatalog(cat) {
+      document.querySelectorAll('.cat-pill').forEach(btn => {
+        btn.className = "cat-pill px-2.5 py-1 text-xs rounded-lg font-medium bg-slate-800 text-slate-300 hover:bg-slate-700";
+      });
+      if (event && event.target) {
+        event.target.className = "cat-pill active px-2.5 py-1 text-xs rounded-lg font-medium bg-indigo-600 text-white";
+      }
+      renderShelf(cat);
+    }
+
+    function normalizeBarcode(value) {
+      return String(value ?? "")
+        .trim()
+        .replace(/\.0+$/, "")
+        .replace(/[^0-9A-Za-z]/g, "")
+        .toUpperCase();
+    }
+
+    function addByItemObj(barcode) {
+      const scannedCode = String(barcode ?? "").trim();
+      const normalizedScannedCode = normalizeBarcode(scannedCode);
+      const found = inventory.find(p => {
+        return normalizeBarcode(p.Barcode) === normalizedScannedCode;
+      });
+      if (found) {
+        addToCart(found);
+      } else {
+        showToast("ស្កេនបាន ប៉ុន្តែមិនមានទំនិញ", `Barcode: ${scannedCode}`, "error");
+      }
+    }
+
+    function addToCart(p) {
+      AudioEngine.beep();
+      const existing = cart.find(x => String(x.Barcode) === String(p.Barcode));
+      if (existing) {
+        existing.Qty += 1;
+      } else {
+        cart.push({
+          Barcode: p.Barcode,
+          Name: p["Product Name"],
+          Price: parseFloat(p["Sale Price ($)"] || 0),
+          Image: p.Image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100",
+          Qty: 1
+        });
+      }
+      renderCart();
+      showToast("បានបញ្ចូលកន្ត្រក", `+1 ${p["Product Name"]}`);
+    }
+
+    function updateQty(index, change) {
+      cart[index].Qty += change;
+      if (cart[index].Qty <= 0) cart.splice(index, 1);
+      renderCart();
+    }
+
+    function removeItem(index) {
+      cart.splice(index, 1);
+      renderCart();
+    }
+
+    function clearCart() {
+      if (cart.length === 0) return;
+      cart = [];
+      discountPercent = 0;
+      updateDiscountButtons();
+      renderCart();
+      showToast("កន្ត្រកទទេ", "បានសម្អាតកន្ត្រករួចរាល់", "warn");
+    }
+
+    function setDiscount(val) {
+      discountPercent = val;
+      updateDiscountButtons();
+      renderCart();
+    }
+
+    function updateDiscountButtons() {
+      [0, 5, 10].forEach(d => {
+        const b = document.getElementById(`disc-${d}`);
+        if (b) {
+          b.className = (d === discountPercent)
+            ? "px-2.5 py-1 rounded-lg font-bold bg-indigo-600 text-white"
+            : "px-2.5 py-1 rounded-lg text-slate-400 hover:text-white";
+        }
+      });
+      const discLbl = document.getElementById("cart-discount-label");
+      if (discLbl) discLbl.innerText = `បញ្ចុះតម្លៃ ${discountPercent}%`;
+    }
+
+    function renderCart() {
+      const container = document.getElementById("cart-items-container");
+      const itemCountLabel = document.getElementById("cart-item-count");
+      const totalUsdEl = document.getElementById("cart-total-usd");
+      const totalRielEl = document.getElementById("cart-total-riel");
+      const mobileBarTotal = document.getElementById("mobile-bar-total");
+      const mobileBarCount = document.getElementById("mobile-bar-count");
+      const tabCartTotal = document.getElementById("tab-cart-total");
+      const tabCartBadge = document.getElementById("tab-cart-badge");
+
+      const totalItemsCount = cart.reduce((acc, it) => acc + it.Qty, 0);
+      if (itemCountLabel) itemCountLabel.innerText = `${totalItemsCount} មុខទំនិញ (Items)`;
+      if (mobileBarCount) mobileBarCount.innerText = totalItemsCount;
+      if (tabCartBadge) tabCartBadge.innerText = totalItemsCount;
+
+      if (cart.length === 0) {
+        if (container) {
+          container.innerHTML = `
+            <div class="h-44 flex flex-col items-center justify-center text-slate-500 text-center p-4">
+              <svg class="w-12 h-12 text-slate-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+              </svg>
+              <p class="text-sm font-medium text-slate-400">មិនទាន់មានទំនិញក្នុងកន្ត្រកទេ</p>
+              <p class="text-xs text-slate-500 mt-0.5">ស្កេនបាកូដ ឬចុចលើទំនិញដើម្បីបញ្ចូល</p>
+            </div>
+          `;
+        }
+        if (totalUsdEl) totalUsdEl.innerText = "$0.00";
+        if (totalRielEl) totalRielEl.innerText = "0 ៛";
+        if (mobileBarTotal) mobileBarTotal.innerText = "$0.00";
+        if (tabCartTotal) tabCartTotal.innerText = "$0.00";
+        calculateChange();
+        return;
+      }
+
+      let subtotal = 0;
+      if (container) {
+        container.innerHTML = cart.map((item, idx) => {
+          const itemTot = item.Price * item.Qty;
+          subtotal += itemTot;
+          return `
+            <div class="flex items-center justify-between gap-3 p-2.5 bg-slate-900/60 border border-slate-800 rounded-xl hover:border-slate-700 transition-colors">
+              <img src="${item.Image}" class="w-11 h-11 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0" onerror="this.src='https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100'">
+              <div class="flex-1 min-w-0">
+                <h4 class="text-xs font-bold text-white truncate">${item.Name}</h4>
+                <p class="text-[11px] text-slate-400 font-mono">$${item.Price.toFixed(2)} × ${item.Qty}</p>
+              </div>
+              <div class="flex items-center bg-slate-800 rounded-lg border border-slate-700 p-0.5">
+                <button onclick="updateQty(${idx}, -1)" class="w-6 h-6 flex items-center justify-center text-xs font-bold text-slate-300 hover:text-white rounded hover:bg-slate-700">−</button>
+                <span class="w-7 text-center text-xs font-mono font-bold text-white">${item.Qty}</span>
+                <button onclick="updateQty(${idx}, 1)" class="w-6 h-6 flex items-center justify-center text-xs font-bold text-slate-300 hover:text-white rounded hover:bg-slate-700">+</button>
+              </div>
+              <div class="text-right min-w-[65px]">
+                <div class="text-xs font-bold text-emerald-400 font-mono">$${itemTot.toFixed(2)}</div>
+                <div class="text-[10px] text-slate-500 font-mono">${(itemTot * KHR_RATE).toLocaleString()} ៛</div>
+              </div>
+              <button onclick="removeItem(${idx})" class="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          `;
+        }).join("");
+      }
+
+      const discountedTotal = subtotal * (1 - discountPercent / 100);
+      const grandTotalRiel = Math.round(discountedTotal * KHR_RATE);
+
+      if (totalUsdEl) totalUsdEl.innerText = `$${discountedTotal.toFixed(2)}`;
+      if (totalRielEl) totalRielEl.innerText = `${grandTotalRiel.toLocaleString()} ៛`;
+      if (mobileBarTotal) mobileBarTotal.innerText = `$${discountedTotal.toFixed(2)}`;
+      if (tabCartTotal) tabCartTotal.innerText = `$${discountedTotal.toFixed(2)}`;
+
+      calculateChange();
+    }
+
+    function calculateChange() {
+      const receivedInput = document.getElementById("cash-received");
+      const changeUsdEl = document.getElementById("change-usd");
+      const changeKhrEl = document.getElementById("change-khr");
+      if (!receivedInput || !changeUsdEl) return;
+
+      let subtotal = cart.reduce((acc, it) => acc + it.Price * it.Qty, 0);
+      let grandTotal = subtotal * (1 - discountPercent / 100);
+
+      const received = parseFloat(receivedInput.value) || 0;
+      const change = received - grandTotal;
+
+      if (received > 0 && change >= 0) {
+        changeUsdEl.innerText = `$${change.toFixed(2)}`;
+        changeKhrEl.innerText = `${Math.round(change * KHR_RATE).toLocaleString()} ៛`;
+        changeUsdEl.className = "font-bold text-emerald-400";
+      } else if (received > 0 && change < 0) {
+        changeUsdEl.innerText = `ខ្វះ $${Math.abs(change).toFixed(2)}`;
+        changeKhrEl.innerText = `(ខ្វះ ${Math.round(Math.abs(change) * KHR_RATE).toLocaleString()} ៛)`;
+        changeUsdEl.className = "font-bold text-rose-400";
+      } else {
+        changeUsdEl.innerText = "$0.00";
+        changeKhrEl.innerText = "0 ៛";
+        changeUsdEl.className = "font-bold text-slate-400";
+      }
+    }
+
+    // ==========================================
+    // ⚡ ULTRA-FAST BARCODE DETECTION ENGINE
+    // ==========================================
+    function setupNativeDetectorLoop() {
+      if (!('BarcodeDetector' in window)) return;
+      
+      try {
+        nativeDetector = new BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'upc_a', 'code_128', 'qr_code']
+        });
+
+        const video = document.querySelector("#reader video");
+        if (!video) return;
+
+        const detectFrame = async () => {
+          if (!isCameraRunning) return;
+          if (video.readyState === video.HAVE_ENOUGH_DATA && !scanCooldown) {
+            try {
+              const barcodes = await nativeDetector.detect(video);
+              if (barcodes && barcodes.length > 0) {
+                const detectedVal = barcodes[0].rawValue;
+                scanCooldown = true;
+                handleScanCode(detectedVal);
+                setTimeout(() => { scanCooldown = false; }, 1200);
+              }
+            } catch (err) {}
+          }
+          nativeScanLoopId = requestAnimationFrame(detectFrame);
+        };
+
+        detectFrame();
+      } catch(e) {
+        console.warn("Native BarcodeDetector not active:", e);
+      }
+    }
+
+    async function switchCameraFacing() {
+      currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+
+      const switchLabel = document.getElementById("switch-cam-label");
+      const switchButton = document.getElementById("btn-switch-cam");
+      const nextLabel = currentFacingMode === "environment" ? "កាមេរ៉ាក្រោយ" : "កាមេរ៉ាមុខ";
+      if (switchLabel) switchLabel.innerText = nextLabel;
+      if (switchButton) switchButton.title = `ប្តូរទៅ${nextLabel}`;
+
+      if (html5QrCode && isCameraRunning) {
+        if (nativeScanLoopId) cancelAnimationFrame(nativeScanLoopId);
+        try {
+          await html5QrCode.stop();
+          isCameraRunning = false;
+        } catch (error) {
+          console.warn("Camera stop before switching failed:", error);
+        }
+      }
+
+      showToast("កាមេរ៉ា", `បានជ្រើស ${nextLabel}`, "warn");
+      initQrScanner();
+    }
+
+    function initQrScanner() {
+      const supportedFormats = window.Html5QrcodeSupportedFormats;
+      const formatsToSupport = supportedFormats ? [
+        supportedFormats.EAN_13,
+        supportedFormats.EAN_8,
+        supportedFormats.UPC_A,
+        supportedFormats.CODE_128,
+        supportedFormats.QR_CODE
+      ].filter(Boolean) : undefined;
+
+      if (html5QrCode) {
+        try { html5QrCode.clear(); } catch(e){}
+      }
+
+      const scannerOptions = { verbose: false };
+      if (formatsToSupport && formatsToSupport.length) {
+        scannerOptions.formatsToSupport = formatsToSupport;
+      }
+      html5QrCode = new Html5Qrcode("reader", scannerOptions);
+
+      // កំណត់ទំហំ scan ឱ្យសមស្របទាំងលើ iPhone និង Laptop
+     const config = {
+
+        fps: 30,
+
+        qrbox: { width: 320, height: 120 },
+
+        disableFlip: false
+
+      };
+      // មុខងារ Handle ពេលស្កេនឃើញ Barcode
+      const onScanSuccess = (decodedText) => {
+        if (scanCooldown) return;
+        scanCooldown = true;
+        handleScanCode(decodedText);
+        setTimeout(() => { scanCooldown = false; }, 1200);
+      };
+
+      // ជំហានទី ១៖ បើកកាមេរ៉ាតាម mode ដែលអ្នកបានជ្រើស
+      html5QrCode.start(
+        { facingMode: currentFacingMode },
+        config,
+        onScanSuccess,
+        () => {}
+      ).then(() => {
+        onCameraStarted();
+      }).catch(err => {
+        console.warn("មិនអាចបើកដោយ facingMode បានទេ សាកល្បងតាម Camera ID (សម្រាប់ Laptop):", err);
+
+        // ជំហានទី ២៖ បើជា Laptop ដែលគ្មាន facingMode ប្តូរមកជ្រើសរើស Camera ID ស្វ័យប្រវត្តិ
+        Html5Qrcode.getCameras().then(devices => {
+          if (devices && devices.length) {
+            // ជ្រើស camera តាម label ជា fallback បើ browser មិនគាំទ្រ facingMode
+            let selectedCamera = devices[0].id;
+            const cameraLabels = devices.map(dev => ({
+              id: dev.id,
+              label: (dev.label || "").toLowerCase()
+            }));
+            const preferredCamera = currentFacingMode === "environment"
+              ? cameraLabels.find(dev => /back|rear|environment|traseira|trasera/.test(dev.label))
+              : cameraLabels.find(dev => /front|user|facetime|integrated/.test(dev.label));
+
+            if (preferredCamera) {
+              selectedCamera = preferredCamera.id;
+            } else if (currentFacingMode === "environment" && devices.length > 1) {
+              selectedCamera = devices[devices.length - 1].id;
+            }
+
+            html5QrCode.start(
+              selectedCamera,
+              config,
+              onScanSuccess,
+              () => {}
+            ).then(() => {
+              onCameraStarted();
+            }).catch(e => {
+              console.error("Camera start error:", e);
+              showToast("កាមេរ៉ា", "មិនអាចបើក Camera បានទេ", "error");
+            });
+          } else {
+            showToast("កាមេរ៉ា", "រកមិនឃើញ Camera លើឧបករណ៍នេះទេ", "error");
+          }
+        }).catch(e => {
+          showToast("កាមេរ៉ា", "សូមអនុញ្ញាតបើក Camera លើ Browser", "error");
+        });
+      });
+    }
+
+    // មុខងារ Update UI ពេលកាមេរ៉ាចាប់ផ្តើមដំណើរការ
+    function onCameraStarted() {
+      isCameraRunning = true;
+      const camLabel = document.getElementById("cam-label");
+      const camIcon = document.getElementById("cam-icon");
+      if (camLabel) camLabel.innerText = "បិទកាមេរ៉ា";
+      if (camIcon) camIcon.innerText = "📷";
+      const hud = document.getElementById("scanner-hud");
+      if (hud) hud.style.display = "flex";
+
+      // ដំណើរការ Hardware Native Detector បន្ថែមល្បឿន
+      setTimeout(setupNativeDetectorLoop, 400);
+    }
+
+    // Toggle Camera តែមួយគត់ មិនស្ទួន
+    function toggleCameraStream() {
+      if (!html5QrCode) {
+        initQrScanner();
+        return;
+      }
+
+      if (isCameraRunning) {
+        if (nativeScanLoopId) cancelAnimationFrame(nativeScanLoopId);
+        html5QrCode.stop().then(() => {
+          isCameraRunning = false;
+          const camLabel = document.getElementById("cam-label");
+          const camIcon = document.getElementById("cam-icon");
+          if (camLabel) camLabel.innerText = "បើកកាមេរ៉ា";
+          if (camIcon) camIcon.innerText = "📷";
+          const hud = document.getElementById("scanner-hud");
+          if (hud) hud.style.display = "none";
+        }).catch(() => {});
+      } else {
+        initQrScanner();
+      }
+    }
+
+    function toggleScanPanel() {
+      const scannerPanel = document.getElementById("scanner-panel-card");
+      const panelToggle = document.getElementById("scan-panel-toggle");
+      const panelLabel = document.getElementById("scan-panel-label");
+      const panelIcon = document.getElementById("scan-panel-icon");
+      if (!scannerPanel) return;
+      const isHidden = scannerPanel.classList.toggle("hidden");
+
+      if (isHidden && html5QrCode && isCameraRunning) {
+        toggleCameraStream();
+      }
+
+      if (panelLabel) panelLabel.innerText = isHidden ? "បើកផ្ទាំងស្កេន" : "បិទផ្ទាំងស្កេន";
+      if (panelIcon) panelIcon.innerText = "▣";
+      if (panelToggle && panelLabel) panelToggle.title = panelLabel.innerText;
+    }
+
+    function handleScanCode(code) {
+      const clean = String(code).trim();
+      if (!clean) return;
+      addByItemObj(clean);
+    }
+
+    function handleManualSearch() {
+      const input = document.getElementById("manual-barcode");
+      if (!input) return;
+      const query = input.value.trim();
+      if (!query) return;
+
+      const match = inventory.find(p => 
+        String(p.Barcode).toLowerCase() === query.toLowerCase() ||
+        p["Product Name"].toLowerCase().includes(query.toLowerCase())
+      );
+
+      if (match) {
+        addToCart(match);
+        input.value = "";
+      } else {
+        showToast("រកមិនឃើញ", `គ្មានទិន្នន័យសម្រាប់: "${query}"`, "error");
+      }
+    }
+
+    async function handleCheckout() {
+      if (cart.length === 0) {
+        showToast("កន្ត្រកទទេ", "សូមស្កេន ឬជ្រើសរើសទំនិញជាមុនសិន!", "error");
+        return;
+      }
+
+      const checkoutBtn = document.getElementById("btn-checkout");
+      if (checkoutBtn) {
+        checkoutBtn.disabled = true;
+        checkoutBtn.innerHTML = `<span>⏳ កំពុងកាត់ស្តុក & កត់ត្រា...</span>`;
+      }
+
+      const paymentMethod = document.getElementById("payment-type") ? document.getElementById("payment-type").value : "Cash";
+      const invoiceNumber = "INV-" + new Date().getFullYear() + "-" + String(Math.floor(1000 + Math.random() * 9000));
+
+      try {
+        await fetch(SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: JSON.stringify({
+            invoiceId: invoiceNumber,
+            items: cart,
+            discount: discountPercent,
+            paymentMethod: paymentMethod,
+            timestamp: new Date().toISOString()
+          })
+        });
+      } catch (err) {
+        console.warn("Could not push to Google Sheets online:", err);
+      }
+
+      AudioEngine.cashChime();
+      showReceiptModal(invoiceNumber, paymentMethod);
+
+      if (checkoutBtn) {
+        checkoutBtn.disabled = false;
+        checkoutBtn.innerHTML = `<span>💳 គិតលុយ & បោះពុម្ពវិក្កយបត្រ (Pay & Print)</span>`;
+      }
+    }
+
+    function showReceiptModal(invoiceNo, payMethod) {
+      const now = new Date();
+      const invEl = document.getElementById("receipt-inv-no");
+      const dateEl = document.getElementById("receipt-date");
+      const payEl = document.getElementById("receipt-pay-method");
+      if (invEl) invEl.innerText = invoiceNo;
+      if (dateEl) dateEl.innerText = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      if (payEl) payEl.innerText = payMethod;
+
+      let subtotal = 0;
+      const tbody = document.getElementById("receipt-table-body");
+      if (tbody) {
+        tbody.innerHTML = cart.map(it => {
+          const lineTot = it.Price * it.Qty;
+          subtotal += lineTot;
+          return `
+            <tr>
+              <td class="py-1 font-semibold text-stone-900 pr-1">${it.Name}</td>
+              <td class="py-1 text-center font-mono">${it.Qty}</td>
+              <td class="py-1 text-right font-mono">$${it.Price.toFixed(2)}</td>
+              <td class="py-1 text-right font-mono font-bold">$${lineTot.toFixed(2)}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      const discountAmt = subtotal * (discountPercent / 100);
+      const grandTot = subtotal - discountAmt;
+      const grandTotRiel = Math.round(grandTot * KHR_RATE);
+
+      const rSub = document.getElementById("receipt-subtotal");
+      const rDisc = document.getElementById("receipt-discount");
+      const rDiscRow = document.getElementById("receipt-disc-row");
+      const rTotUsd = document.getElementById("receipt-total-usd");
+      const rTotKhr = document.getElementById("receipt-total-khr");
+
+      if (rSub) rSub.innerText = `$${subtotal.toFixed(2)}`;
+      if (rDisc) rDisc.innerText = `-$${discountAmt.toFixed(2)} (${discountPercent}%)`;
+      if (rDiscRow) rDiscRow.style.display = discountPercent > 0 ? "flex" : "none";
+      if (rTotUsd) rTotUsd.innerText = `$${grandTot.toFixed(2)}`;
+      if (rTotKhr) rTotKhr.innerText = `${grandTotRiel.toLocaleString()} ៛`;
+
+      const recVal = parseFloat(document.getElementById("cash-received").value) || grandTot;
+      const changeVal = Math.max(0, recVal - grandTot);
+      const rPaid = document.getElementById("receipt-paid");
+      const rChange = document.getElementById("receipt-change");
+      if (rPaid) rPaid.innerText = `$${recVal.toFixed(2)}`;
+      if (rChange) rChange.innerText = `$${changeVal.toFixed(2)} (${Math.round(changeVal * KHR_RATE).toLocaleString()} ៛)`;
+
+      const modal = document.getElementById("receipt-modal");
+      if (modal) modal.classList.remove("hidden");
+    }
+
+    function closeReceiptModal() {
+      const modal = document.getElementById("receipt-modal");
+      if (modal) modal.classList.add("hidden");
+      clearCart();
+      const cashInput = document.getElementById("cash-received");
+      if (cashInput) cashInput.value = "";
+      calculateChange();
+    }
+
+    function switchMobileTab(tab) {
+      const paneScanner = document.getElementById("pane-scanner");
+      const paneCart = document.getElementById("pane-cart");
+      const tabPos = document.getElementById("tab-btn-pos");
+      const tabCart = document.getElementById("tab-btn-cart");
+
+      if (tab === 'pos') {
+        if (paneScanner) paneScanner.classList.remove("hidden");
+        if (paneCart) paneCart.classList.add("hidden");
+        if (tabPos) tabPos.className = "flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-md";
+        if (tabCart) tabCart.className = "flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all bg-slate-800 text-slate-300 border border-slate-700";
+      } else {
+        if (paneScanner) paneScanner.classList.add("hidden");
+        if (paneCart) paneCart.classList.remove("hidden");
+        if (tabCart) tabCart.className = "flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-md";
+        if (tabPos) tabPos.className = "flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all bg-slate-800 text-slate-300 border border-slate-700";
+      }
+    }
+
+    function updateClock() {
+      const clockEl = document.getElementById("live-time");
+      if (clockEl) {
+        const d = new Date();
+        clockEl.innerText = d.toLocaleTimeString('km-KH', { hour12: false }) + " (ICT)";
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      syncDataSheet();
+      setInterval(updateClock, 1000);
+      updateClock();
+
+      setTimeout(() => {
+        initQrScanner();
+      }, 400);
+
+      window.addEventListener("resize", () => {
+        if (window.innerWidth >= 1024) {
+          const s = document.getElementById("pane-scanner");
+          const c = document.getElementById("pane-cart");
+          if (s) s.classList.remove("hidden");
+          if (c) c.classList.remove("hidden");
+        }
+      });
+    });
+  </script>
+</body>
+</html>
